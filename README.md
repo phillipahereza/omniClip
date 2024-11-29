@@ -13,22 +13,12 @@ network without requiring a central server.
 - Peer-to-peer network topology with automatic discovery of new nodes on a local network.
 - Easy setup using a command-line interface.
 
+### Enhancements
+- Encrypt data in transit
+
 ---
 
 ## Installation
-
-Pre-built binaries for Linux, macOS, and Windows are available for download.
-
-### Steps to Install
-
-1. Download the appropriate binary for your platform from the [Releases](https://github.com/ahrza/omniclip/releases)
-   page.
-2. Make the binary executable:
-    - **Linux/macOS**: Run `chmod +x omniclip`
-    - **Windows**: The binary is executable as-is.
-3. Move the binary to a directory in your system's `PATH`:
-    - **Linux/macOS**: Run `sudo mv omniclip /usr/local/bin/`
-    - **Windows**: Add the binary's location to your system's `PATH`.
 
 ### Building from Source
 
@@ -36,15 +26,14 @@ If you'd like to build Omniclip from source:
 
 1. Ensure you have [Go](https://golang.org/dl/) installed.
 2. Clone the repository:
-   ```bash
-   git clone https://github.com/ahrza/omniclip.git
+   ```shell
+   git clone https://github.com/phillipahereza/omniclip.git
    cd omniclip
    ```
 3. Build the project:
-   ```bash
+   ```shell
    go build -o omniclip
    ```
-
 ---
 
 ## Usage
@@ -53,7 +42,7 @@ If you'd like to build Omniclip from source:
 
 Run the application with the following command:
 
-   ```bash
+   ```shell
    omniclip start --topic "my-topic"
    ```
 
@@ -65,7 +54,7 @@ By default, Omniclip will:
 
 You can customize these defaults with the following options:
 
-   ```bash
+   ```shell
    omniclip start --port 52321 --status 52322 --topic "my-topic"
    ```
 
@@ -73,7 +62,7 @@ You can customize these defaults with the following options:
 
 To check the status of Omniclip, run:
 
-   ```bash
+   ```shell
    omniclip status
    ```
 
@@ -81,7 +70,7 @@ To check the status of Omniclip, run:
 
 For a complete list of available options, run:
 
-   ```bash
+   ```shell
    omniclip help
    ```
 
@@ -96,7 +85,7 @@ distribute the software, in either source or binary form, for any purpose.
 
 ## Contributing
 
-We welcome contributions! Feel free to open an issue or submit a pull request
-on [GitHub](https://github.com/ahrza/omniclip).
+Contributions are welcome! Feel free to open an issue or submit a pull request
+on [GitHub](https://github.com/phillipahereza/omniclip).
 
 ---

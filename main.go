@@ -23,8 +23,6 @@ import (
 	"golang.design/x/clipboard"
 )
 
-// todo add logging and add flag to set debug level
-
 const (
 	serviceName        = "omniclip"
 	defaultServicePort = 49435
@@ -101,9 +99,6 @@ func (n *discoverer) HandlePeerFound(p peer.AddrInfo) {
 }
 
 func startNode(ctx context.Context, p2pPort, statusPort int, topicName string) error {
-	stop := make(chan os.Signal, 1)
-	signal.Notify(stop, syscall.SIGINT, syscall.SIGTERM)
-
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
@@ -143,14 +138,17 @@ func startNode(ctx context.Context, p2pPort, statusPort int, topicName string) e
 	}()
 
 	go func(ho host.Host) {
-		if err := setupDNSDiscovery(ho); err != nil {
-			log.Fatal(err)
+		if dnsErr := setupDNSDiscovery(ho); dnsErr != nil {
+			errChan <- dnsErr
 		}
 	}(h)
 
 	go watchClipboard(ctx, topic, eventsCh, h.ID())
 
 	go receiveMessages(ctx, subscription, h.ID())
+
+	stop := make(chan os.Signal, 1)
+	signal.Notify(stop, syscall.SIGINT, syscall.SIGTERM)
 
 	select {
 	case <-stop:
@@ -195,20 +193,20 @@ func getStatus(port int) error {
 	client := http.Client{Timeout: 1 * time.Second}
 	resp, err := client.Get(fmt.Sprintf("http://0.0.0.0:%d/status", port))
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "node status: 🛑\n\nis omniClip running?")
+		fmt.Println("node status: 🛑\n\nis omniClip running?")
 		return fmt.Errorf("could not connect to server: %w", err)
 	}
 	defer func() {
 		_ = resp.Body.Close()
 	}()
 	if resp.StatusCode != http.StatusOK {
-		fmt.Fprintln(os.Stderr, "node status: 🛑\n\nresponse status not ok")
+		fmt.Println("node status: 🛑\n\nresponse status not ok")
 		return errors.New("node status not ok")
 	}
 	status := statusResponse{}
 	err = json.NewDecoder(resp.Body).Decode(&status)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "node status: 🛑\n\nsomething went wrong")
+		fmt.Println("node status: 🛑\n\nsomething went wrong")
 		return fmt.Errorf("failed to decode response body: %w", err)
 	}
 
@@ -249,7 +247,6 @@ func receiveMessages(ctx context.Context, sub *pubsub.Subscription, hostID peer.
 		m, err := sub.Next(ctx)
 		if err != nil {
 			if errors.Is(err, context.Canceled) {
-				log.Println("context canceled receive message")
 				return
 			}
 			log.Println(err)
