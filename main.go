@@ -5,9 +5,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"os"
+	"os/signal"
+	"syscall"
 	"time"
 
 	"github.com/libp2p/go-libp2p"
@@ -24,7 +27,6 @@ import (
 
 const (
 	serviceName        = "omniclip"
-	defaultTopic       = "omniclip_X6r9V1NsdGL5Kcfw"
 	defaultServicePort = 49435
 	defaultStatusPort  = 49436
 )
@@ -46,6 +48,7 @@ type discoverer struct {
 
 func main() {
 	app := cli.App{
+		Name: "omniClip",
 		Commands: []*cli.Command{
 			{
 				Name:    "status",
@@ -58,9 +61,10 @@ func main() {
 				Name: "start",
 				Flags: []cli.Flag{
 					&cli.StringFlag{
-						Name:  "topic",
-						Value: defaultTopic,
-						Usage: "If you are running in a larger network, choose a custom topic name",
+						Name:     "topic",
+						Value:    "",
+						Usage:    "Topic to which nodes will subscribe and listen for clipboard events",
+						Required: true,
 					},
 					&cli.IntFlag{
 						Name:  "port",
@@ -78,11 +82,12 @@ func main() {
 				},
 			},
 		},
+		ErrWriter: io.Discard,
 	}
 
 	err := app.Run(os.Args)
 	if err != nil {
-		log.Fatal(err)
+		os.Exit(1)
 	}
 }
 
@@ -96,6 +101,12 @@ func (n *discoverer) HandlePeerFound(p peer.AddrInfo) {
 }
 
 func startNode(ctx context.Context, p2pPort, statusPort int, topicName string) error {
+	stop := make(chan os.Signal, 1)
+	signal.Notify(stop, syscall.SIGINT, syscall.SIGTERM)
+
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
 	h, err := libp2p.New(libp2p.ListenAddrStrings(fmt.Sprintf("/ip4/0.0.0.0/tcp/%d", p2pPort)))
 	if err != nil {
 		return fmt.Errorf("error creating libp2p host: %w", err)
@@ -123,6 +134,14 @@ func startNode(ctx context.Context, p2pPort, statusPort int, topicName string) e
 		return fmt.Errorf("error subscribing to pubsub topic: %w", err)
 	}
 
+	errChan := make(chan error)
+	server := initServer(statusPort, h, topic)
+	go func() {
+		if err := server.ListenAndServe(); err != nil {
+			errChan <- err
+		}
+	}()
+
 	go func(ho host.Host) {
 		if err := setupDNSDiscovery(ho); err != nil {
 			log.Fatal(err)
@@ -131,14 +150,22 @@ func startNode(ctx context.Context, p2pPort, statusPort int, topicName string) e
 
 	go watchClipboard(ctx, topic, eventsCh, h.ID())
 
-	go startServer(statusPort, h, topic)
+	go receiveMessages(ctx, subscription, h.ID())
 
-	receiveMessages(ctx, subscription, h.ID())
-	return nil
+	select {
+	case <-stop:
+		timeoutCtx, svCancel := context.WithTimeout(ctx, 3*time.Second)
+		defer svCancel()
+		svErr := server.Shutdown(timeoutCtx)
+		return fmt.Errorf("server shutdown timed out: %w", svErr)
+	case svErr := <-errChan:
+		return svErr
+	}
 }
 
-func startServer(port int, h host.Host, tp *pubsub.Topic) {
-	http.HandleFunc("/status", func(w http.ResponseWriter, r *http.Request) {
+func initServer(port int, h host.Host, tp *pubsub.Topic) *http.Server {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/status", func(w http.ResponseWriter, r *http.Request) {
 		peerIds := tp.ListPeers()
 		peers := make([]string, 0, len(peerIds))
 		for _, id := range peerIds {
@@ -154,27 +181,34 @@ func startServer(port int, h host.Host, tp *pubsub.Topic) {
 			log.Println(err)
 		}
 	})
-	_ = http.ListenAndServe(fmt.Sprintf(":%d", port), nil)
+
+	server := &http.Server{
+		Addr:              fmt.Sprintf(":%d", port),
+		Handler:           mux,
+		ReadHeaderTimeout: 1 * time.Second,
+	}
+
+	return server
 }
 
 func getStatus(port int) error {
 	client := http.Client{Timeout: 1 * time.Second}
 	resp, err := client.Get(fmt.Sprintf("http://0.0.0.0:%d/status", port))
 	if err != nil {
-		fmt.Println("node status: 🛑")
-		return fmt.Errorf("failed to reach status server: %w", err)
+		fmt.Fprintln(os.Stderr, "node status: 🛑\n\nis omniClip running?")
+		return fmt.Errorf("could not connect to server: %w", err)
 	}
 	defer func() {
 		_ = resp.Body.Close()
 	}()
 	if resp.StatusCode != http.StatusOK {
-		fmt.Println("node status: 🛑")
-		return errors.New("response status not ok")
+		fmt.Fprintln(os.Stderr, "node status: 🛑\n\nresponse status not ok")
+		return errors.New("node status not ok")
 	}
 	status := statusResponse{}
 	err = json.NewDecoder(resp.Body).Decode(&status)
 	if err != nil {
-		fmt.Println("node status: 🛑")
+		fmt.Fprintln(os.Stderr, "node status: 🛑\n\nsomething went wrong")
 		return fmt.Errorf("failed to decode response body: %w", err)
 	}
 
@@ -214,15 +248,21 @@ func receiveMessages(ctx context.Context, sub *pubsub.Subscription, hostID peer.
 	for {
 		m, err := sub.Next(ctx)
 		if err != nil {
+			if errors.Is(err, context.Canceled) {
+				log.Println("context canceled receive message")
+				return
+			}
 			log.Println(err)
 			continue
 		}
+
 		e := &entry{}
 		err = msgpack.Unmarshal(m.Data, e)
 		if err != nil {
 			log.Println(err)
 			continue
 		}
+		log.Println(e.Value)
 		if e.Source != hostID {
 			clipboard.Write(clipboard.FmtText, []byte(e.Value))
 		}

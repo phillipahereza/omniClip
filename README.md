@@ -1,7 +1,9 @@
-
 # Omniclip
 
-**Omniclip** is a universal clipboard application that allows seamless clipboard sharing across devices, regardless of their operating system. Inspired by Apple's Universal Clipboard, Omniclip enables you to copy and paste content between macOS, Linux, and potentially Windows devices. Its decentralized nature allows nodes to discover each other on a local network without requiring a central server.
+**Omniclip** is a universal clipboard application that allows seamless clipboard sharing across devices, regardless of
+their operating system. Inspired by Apple's Universal Clipboard, Omniclip enables you to copy and paste content between
+macOS, Linux, and potentially Windows devices. Its decentralized nature allows nodes to discover each other on a local
+network without requiring a central server.
 
 ---
 
@@ -19,7 +21,8 @@ Pre-built binaries for Linux, macOS, and Windows are available for download.
 
 ### Steps to Install
 
-1. Download the appropriate binary for your platform from the [Releases](https://github.com/ahrza/omniclip/releases) page.
+1. Download the appropriate binary for your platform from the [Releases](https://github.com/ahrza/omniclip/releases)
+   page.
 2. Make the binary executable:
     - **Linux/macOS**: Run `chmod +x omniclip`
     - **Windows**: The binary is executable as-is.
@@ -49,17 +52,19 @@ If you'd like to build Omniclip from source:
 ### Starting the Application
 
 Run the application with the following command:
+
    ```bash
-   omniclip start
+   omniclip start --topic "my-topic"
    ```
 
 By default, Omniclip will:
+
 1. Start the service on port **49435**.
 2. Start a status server on port **49436**.
-3. Use the default topic: **omniclip_X6r9V1NsdGL5Kcfw**.
-4. Monitor the clipboard for changes and sync them across connected devices.
+3. Monitor the clipboard for changes and sync them across connected devices.
 
 You can customize these defaults with the following options:
+
    ```bash
    omniclip start --port 52321 --status 52322 --topic "my-topic"
    ```
@@ -67,6 +72,7 @@ You can customize these defaults with the following options:
 ### Checking the Application Status
 
 To check the status of Omniclip, run:
+
    ```bash
    omniclip status
    ```
@@ -74,6 +80,7 @@ To check the status of Omniclip, run:
 ### Getting Help
 
 For a complete list of available options, run:
+
    ```bash
    omniclip help
    ```
@@ -82,12 +89,14 @@ For a complete list of available options, run:
 
 ## License
 
-This project is released into the public domain under the [Unlicense](LICENSE). You are free to copy, modify, and distribute the software, in either source or binary form, for any purpose.
+This project is released into the public domain under the [Unlicense](LICENSE). You are free to copy, modify, and
+distribute the software, in either source or binary form, for any purpose.
 
 ---
 
 ## Contributing
 
-We welcome contributions! Feel free to open an issue or submit a pull request on [GitHub](https://github.com/ahrza/omniclip).
+We welcome contributions! Feel free to open an issue or submit a pull request
+on [GitHub](https://github.com/ahrza/omniclip).
 
 ---
