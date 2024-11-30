@@ -259,7 +259,6 @@ func receiveMessages(ctx context.Context, sub *pubsub.Subscription, hostID peer.
 			log.Println(err)
 			continue
 		}
-		log.Println(e.Value)
 		if e.Source != hostID {
 			clipboard.Write(clipboard.FmtText, []byte(e.Value))
 		}
