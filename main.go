@@ -25,7 +25,6 @@ import (
 	"github.com/urfave/cli/v2"
 	"github.com/vmihailenco/msgpack/v5"
 	"golang.design/x/clipboard"
-	"golang.org/x/sync/singleflight"
 )
 
 const (
@@ -51,13 +50,13 @@ type discoverer struct {
 	h host.Host
 }
 
-// messageCache is a thread-safe cache for storing message hashes
+// messageCache is a thread-safe cache for storing message hashes.
 type messageCache struct {
 	sync.RWMutex
 	cache map[string]struct{}
 }
 
-// config struct for omniclip settings
+// config struct for omniclip settings.
 type config struct {
 	TopicName   string
 	ServicePort int
@@ -67,7 +66,7 @@ type config struct {
 
 func hashContent(content string) string {
 	hasher := xxhash.New()
-	hasher.WriteString(content)
+	_, _ = hasher.WriteString(content)
 	return hex.EncodeToString(hasher.Sum(nil))
 }
 
@@ -84,7 +83,6 @@ func (mc *messageCache) cleaner(ctx context.Context) {
 			mc.clearCache()
 		}
 	}
-
 }
 
 func (mc *messageCache) addEntry(entry string) bool {
@@ -324,10 +322,9 @@ func startNode(ctx context.Context, cfg *config) error {
 
 	// Start Clipboard Watcher and Message Receiver
 	cache := newMessageCache(ctx)
-	sf := singleflight.Group{}
-	go watchClipboard(ctx, topic, clipboard.Watch(ctx, clipboard.FmtText), h.ID(), cache, &sf)
+	go watchClipboard(ctx, topic, clipboard.Watch(ctx, clipboard.FmtText), h.ID(), cache)
 
-	go receiveMessages(ctx, subscription, h.ID(), cache, &sf)
+	go receiveMessages(ctx, subscription, h.ID(), cache)
 
 	// Handle graceful shutdown
 	stop := make(chan os.Signal, 1)
@@ -349,7 +346,11 @@ func startNode(ctx context.Context, cfg *config) error {
 // setupDNSDiscovery sets up mDNS discovery for the libp2p host.
 func setupDNSDiscovery(h host.Host) error {
 	s := mdns.NewMdnsService(h, serviceName, &discoverer{h: h})
-	return s.Start()
+	err := s.Start()
+	if err != nil {
+		return fmt.Errorf("error starting mDNS service: %w", err)
+	}
+	return nil
 }
 
 // HandlePeerFound is called when a new peer is discovered via mDNS.
@@ -371,41 +372,31 @@ func (n *discoverer) HandlePeerFound(pi peer.AddrInfo) {
 }
 
 // watchClipboard monitors the clipboard for changes and publishes new entries to the pubSub topic.
-func watchClipboard(ctx context.Context, topic *pubsub.Topic, clipboardCh <-chan []byte, id peer.ID, mc *messageCache, sf *singleflight.Group) {
+func watchClipboard(ctx context.Context, topic *pubsub.Topic, clipboardCh <-chan []byte, id peer.ID, mc *messageCache) {
 	logger := slog.Default()
 	for msg := range clipboardCh {
-		// Use singleflight to debounce clipboard updates
-		_, err, _ := sf.Do("clipboardUpdate", func() (interface{}, error) {
-			// check if the content has already been seen. If so, skip publishing
-			logger.Info("Clipboard updated", "text", string(msg))
-			e := &entry{Value: string(msg), Source: id}
+		logger.Info("Clipboard updated", "text", string(msg))
+		e := &entry{Value: string(msg), Source: id}
 
-			if !mc.addEntry(e.Value) {
-				return nil, nil // Skip publishing if already in cache
-			}
+		if !mc.addEntry(e.Value) {
+			continue // Skip publishing if already in cache
+		}
 
-			data, err := msgpack.Marshal(e)
-			if err != nil {
-				return nil, fmt.Errorf("marshalling clipboard entry: %w", err)
-			}
-
-			// Publish the serialized entry to the pubSub topic
-			if err := topic.Publish(ctx, data); err != nil {
-				return nil, fmt.Errorf("publishing clipboard entry: %w", err)
-			}
-			return nil, nil
-		})
-
+		data, err := msgpack.Marshal(e)
 		if err != nil {
 			logger.Warn("Error in clipboard update:", "error", err)
 		}
 
+		// Publish the serialized entry to the pubSub topic
+		if err := topic.Publish(ctx, data); err != nil {
+			logger.Warn("Error in clipboard update:", "error", err)
+		}
 	}
 }
 
 // receiveMessages receives messages from the pubSub topic, unmarshals them,
 // and updates the local clipboard if the message originated from a different peer.
-func receiveMessages(ctx context.Context, sub *pubsub.Subscription, id peer.ID, mc *messageCache, sf *singleflight.Group) {
+func receiveMessages(ctx context.Context, sub *pubsub.Subscription, id peer.ID, mc *messageCache) {
 	logger := slog.Default()
 	for {
 		m, err := sub.Next(ctx)
@@ -432,15 +423,8 @@ func receiveMessages(ctx context.Context, sub *pubsub.Subscription, id peer.ID, 
 			continue
 		}
 
-		_, err, _ = sf.Do("clipboardWrite", func() (interface{}, error) {
-			if e.Source != id {
-				clipboard.Write(clipboard.FmtText, []byte(e.Value))
-			}
-			return nil, nil
-		})
-
-		if err != nil {
-			logger.Warn("Error writing to clipboard:", "error", err)
+		if e.Source != id {
+			clipboard.Write(clipboard.FmtText, []byte(e.Value))
 		}
 	}
 }
